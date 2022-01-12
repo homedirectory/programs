@@ -12,10 +12,14 @@
 
 #define MAX_BUFF 200
 #define MAX_ARGS 20
+#define MAX_ENTRIES 1000
+#define PERM_BITS_LEN 10
 
 void list_dir (char *path, int lflag, int aflag, int dflag, int fflag, int header);
-void print_file_info(char *path, int lflag, int header);
+int file_info(char *path, char *info_buff, int lflag);
 void sec2date(time_t *sec, char *buff);
+void format_buffs(char *buffs, int n_buffs, int buff_size);
+void str_insert(char *dest, char *src, int pos);
 
 /* USAGE
  * myls [options] [args...]
@@ -96,7 +100,12 @@ int main(int argc, char *argv[]) {
         } else {
             // 2. arg is a file 
             //printf("%s is a file\n", arg);
-            print_file_info(path, lflag, header);
+            char info_buff[MAX_BUFF];
+            memset(info_buff, '\0', MAX_BUFF);
+
+            file_info(path, info_buff, lflag);
+
+            printf("%s\n", info_buff);
         }
     }
 
@@ -109,8 +118,13 @@ void list_dir (char *path, int lflag, int aflag, int dflag, int fflag, int heade
     DIR *dir;
     dir = opendir(path);
 
+    char buffs[MAX_ENTRIES][MAX_BUFF];
+    for (int i = 0; i < MAX_ENTRIES; i++)
+        memset(buffs[i], '\0', MAX_BUFF);
+
     int count = 0;
     struct dirent *entry;
+
     while ((entry = readdir(dir)) != NULL) {
         // skip . and ..
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
@@ -131,10 +145,15 @@ void list_dir (char *path, int lflag, int aflag, int dflag, int fflag, int heade
 
         char entry_path[MAX_BUFF];
         memset(entry_path, '\0', MAX_BUFF);
-        strcat(entry_path, path);
+
+        strcpy(entry_path, path);
         entry_path[strlen(entry_path)] = '/';
         strcat(entry_path, entry->d_name);
-        print_file_info(entry_path, lflag, 0);
+
+
+        file_info(entry_path, buffs[count], lflag);
+
+        //printf("%s\n", buffs[count]);
         count += 1;
     }
 
@@ -143,9 +162,17 @@ void list_dir (char *path, int lflag, int aflag, int dflag, int fflag, int heade
     }
 
     closedir(dir);
+
+    format_buffs(buffs, count, MAX_BUFF);
+
+    for (int i = 0; i < count; i++) {
+        printf("%s\n", buffs[i]);
+    }
 }
 
-void print_file_info (char *path, int lflag, int header) {
+// builds char buffer of file info, returns strlen of built buffer
+// ! make sure that info_buff is filled with /0
+int file_info (char *path, char *info_buff, int lflag) {
     char *fname;
     // basename doesn't modify its argument
     fname = basename(path); 
@@ -158,13 +185,19 @@ void print_file_info (char *path, int lflag, int header) {
             printf("error stat(%s)\n", path);
             exit(1);
         }
-        // permission bits; user; group; size (bytes); last modification; name
-        char file_info[MAX_BUFF];
-        memset(file_info, '\0', MAX_BUFF);
+        /* permission bits
+         * user
+         * group
+         * size (bytes)
+         * last modification
+         * name
+         */
 
         // permission bits
-        char perm_bits[11];
-        memset(perm_bits, '-', 10);
+        char perm_bits[PERM_BITS_LEN + 1];
+        memset(perm_bits, '-', PERM_BITS_LEN);
+        perm_bits[PERM_BITS_LEN + 1] = '\0';
+
         mode_t mode = info.st_mode;
 
         if (S_ISDIR(mode)) {
@@ -186,40 +219,39 @@ void print_file_info (char *path, int lflag, int header) {
         if ( mode & S_IWOTH ) perm_bits[8] = 'w';
         if ( mode & S_IXOTH ) perm_bits[9] = 'x';
 
-        strcpy(file_info, perm_bits);
-        file_info[strlen(file_info)] = ' ';
+        strcpy(info_buff, perm_bits);
+        info_buff[strlen(info_buff)] = ' ';
 
         // user
-        //sprintf(file_info + strlen(file_info), "%d ", info.st_uid);
-        sprintf(file_info + strlen(file_info), "%s ", getpwuid(info.st_uid)->pw_name);
+        //sprintf(info_buff + strlen(info_buff), "%d ", info.st_uid);
+        sprintf(info_buff + strlen(info_buff), "%s ", getpwuid(info.st_uid)->pw_name);
 
         // group
-        //sprintf(file_info + strlen(file_info), "%d ", info.st_gid);
-        sprintf(file_info + strlen(file_info), "%s ", getgrgid(info.st_gid)->gr_name);
+        //sprintf(info_buff + strlen(info_buff), "%d ", info.st_gid);
+        sprintf(info_buff + strlen(info_buff), "%s ", getgrgid(info.st_gid)->gr_name);
 
         // size (bytes)
-        sprintf(file_info + strlen(file_info), "%d ", info.st_size);
+        sprintf(info_buff + strlen(info_buff), "%d ", info.st_size);
 
         // last modification date
         char buff[MAX_BUFF];
         memset(buff, '\0', MAX_BUFF);
         sec2date(&info.st_mtim.tv_sec, buff);
-        file_info[strlen(file_info)] = '[';
-        strcat(file_info, buff);
-        file_info[strlen(file_info)] = ']';
-        file_info[strlen(file_info)] = ' ';
+        info_buff[strlen(info_buff)] = '[';
+        strcat(info_buff, buff);
+        info_buff[strlen(info_buff)] = ']';
+        info_buff[strlen(info_buff)] = ' ';
 
         // name
-        strcat(file_info, fname);
+        strcat(info_buff, fname);
 
-        printf("%s\n", file_info);
+        //printf("%s\n", file_info);
     } else {
-        printf("%s\n", fname);
+        strcpy(info_buff, fname);
+        //printf("%s\n", fname);
     }
 
-    if (header == 1) {
-        printf("\n");
-    }
+    return strlen(info_buff);
 }
 
 void sec2date(time_t *sec, char *buff) {
@@ -228,6 +260,138 @@ void sec2date(time_t *sec, char *buff) {
 
     strftime(buff, 30, "%d %b %Y %H:%M", time);
 }
+
+void format_buffs(char *buffs, int n_buffs, int buff_size) {
+    /* fields:
+     * perm bits (no format, static length)
+     * owner 
+     * group
+     * byte size
+     * date
+     * name
+     */
+
+    int lengths[5] = {0, 0, 0, 0, 0};
+
+    // for each buff calculate its fields' lengths
+    for (int i = 0; i < n_buffs; i++) {
+        char *buff = buffs + (i * buff_size) + (PERM_BITS_LEN + 1);
+        //printf("%s\n", buff);
+
+        int flen = 0;
+        int fc = 0; // current field index
+        int in_date = 0;
+
+        for (int j = 0; j < strlen(buff) + 1; j++) {
+            char c = buff[j];
+
+            if (c == '[' && fc == 3) {
+                in_date = 1;
+                flen++;
+            } else if (c == ']' && fc == 3) {
+                in_date = 0;
+                flen++;
+            } else if ((c == ' ' || c == '\0') && in_date == 0) {
+                // record field length
+                if (flen > lengths[fc]) {
+                    lengths[fc] = flen;
+                }
+                flen = 0;
+                fc++;
+            } else {
+                flen++;
+            }
+        }
+    }
+
+    // test
+    for (int i = 0; i < 5; i++) {
+        printf("%d ", lengths[i]);
+    }
+    printf("\n");
+
+    int ws_to_insert[n_buffs][5][2];
+
+    for (int i = 0; i < n_buffs; i++) {
+        char *buff = buffs + (i * buff_size) + (PERM_BITS_LEN + 1);
+
+        int flen = 0;
+        int fc = 0; // current field index
+        int in_date = 0;
+
+        for (int j = 0; j < strlen(buff) + 1; j++) {
+            char c = buff[j];
+
+            if (c == '[' && fc == 3) {
+                in_date = 1;
+                flen++;
+            } else if (c == ']' && fc == 3) {
+                in_date = 0;
+                flen++;
+            } else if ((c == ' ' || c == '\0') && in_date == 0) {
+                int lendiff = lengths[fc] - flen;
+                if (lendiff > 0) {
+                    ws_to_insert[i][fc][0] = lendiff;
+                    ws_to_insert[i][fc][1] = j;
+                } else {
+                    ws_to_insert[i][fc][0] = 0;
+                    ws_to_insert[i][fc][1] = 0;
+                }
+                flen = 0;
+                fc++;
+            } else {
+                flen++;
+            }
+        }
+    }
+
+
+    for (int i = 0; i < n_buffs; i++){
+        for (int j = 0; j < 5; j++) {
+            int ws_n = ws_to_insert[i][j][0];
+            int ws_pos = ws_to_insert[i][j][1];
+            printf("%d, %d\n", ws_n, ws_pos);
+        }
+    }
+
+    for (int i = 0; i < 5; i++){
+        for (int j = 0; j < 5; j++) {
+            int ws_n = ws_to_insert[i][j][0];
+            int ws_pos = ws_to_insert[i][j][1];
+
+            char ws[ws_n + 1];
+            memset(ws, ' ', ws_n);
+
+            char *buff = buffs + (i * buff_size) + (PERM_BITS_LEN + 1);
+            str_insert(buff, ws, ws_pos); 
+        }
+    }
+
+}
+
+void str_insert(char *dest, char *src, int pos) {
+    // ['a', 'b', 'c', 'd']
+    // ['a', 'b', ' ', ' ', 'c', 'd']
+    // str_insert("abcd", "  ", 2);
+
+    int srclen = strlen(src);
+    // 1. shift chars to the right
+    for (int i = strlen(dest); i >= pos; i--) {
+        dest[i + srclen] = dest[i];
+    }
+
+    // 2. insert src
+    int j = pos;
+    for (int i = 0; i < srclen; i++) {
+        dest[j] = src[i];
+        j++;
+    }
+}
+
+
+
+
+
 
 
 
