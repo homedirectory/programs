@@ -14,6 +14,7 @@
 #define MAX_ARGS 20
 #define MAX_ENTRIES 1000
 #define PERM_BITS_LEN 10
+#define NUM_FIELDS 6
 
 void list_dir (char *path, int lflag, int aflag, int dflag, int fflag, int header);
 int file_info(char *path, char *info_buff, int lflag);
@@ -33,7 +34,6 @@ void str_insert(char *dest, char *src, int pos);
  * args : file names to list (none given = current directory)
  */
 
-// TODO formatting
 int main(int argc, char *argv[]) {
     int lflag = 0;
     int aflag = 0;
@@ -119,8 +119,6 @@ void list_dir (char *path, int lflag, int aflag, int dflag, int fflag, int heade
     dir = opendir(path);
 
     char buffs[MAX_ENTRIES][MAX_BUFF];
-    for (int i = 0; i < MAX_ENTRIES; i++)
-        memset(buffs[i], '\0', MAX_BUFF);
 
     int count = 0;
     struct dirent *entry;
@@ -150,20 +148,18 @@ void list_dir (char *path, int lflag, int aflag, int dflag, int fflag, int heade
         entry_path[strlen(entry_path)] = '/';
         strcat(entry_path, entry->d_name);
 
-
+        memset(buffs[count], '\0', MAX_BUFF);
         file_info(entry_path, buffs[count], lflag);
 
         //printf("%s\n", buffs[count]);
         count += 1;
     }
 
-    if (header == 1) {
-        printf("\n");
-    }
+    if (header == 1) printf("\n");
 
     closedir(dir);
-
-    format_buffs(buffs, count, MAX_BUFF);
+    
+    if (lflag == 1) format_buffs(buffs, count, MAX_BUFF);
 
     for (int i = 0; i < count; i++) {
         printf("%s\n", buffs[i]);
@@ -267,15 +263,16 @@ void format_buffs(char *buffs, int n_buffs, int buff_size) {
      * owner 
      * group
      * byte size
-     * date
-     * name
+     * date (static length)
+     * name (no need to format, since last field)
      */
 
-    int lengths[5] = {0, 0, 0, 0, 0};
+    int lengths[NUM_FIELDS] = {-1, 0, 0, 0, -1, -1};
+    int date_index = 4;
 
     // for each buff calculate its fields' lengths
     for (int i = 0; i < n_buffs; i++) {
-        char *buff = buffs + (i * buff_size) + (PERM_BITS_LEN + 1);
+        char *buff = buffs + (i * buff_size);
         //printf("%s\n", buff);
 
         int flen = 0;
@@ -285,15 +282,15 @@ void format_buffs(char *buffs, int n_buffs, int buff_size) {
         for (int j = 0; j < strlen(buff) + 1; j++) {
             char c = buff[j];
 
-            if (c == '[' && fc == 3) {
+            if (c == '[' && fc == date_index) {
                 in_date = 1;
                 flen++;
-            } else if (c == ']' && fc == 3) {
+            } else if (c == ']' && fc == date_index) {
                 in_date = 0;
                 flen++;
             } else if ((c == ' ' || c == '\0') && in_date == 0) {
-                // record field length
-                if (flen > lengths[fc]) {
+                if (lengths[fc] != -1 && flen > lengths[fc]) {
+                    // record field length
                     lengths[fc] = flen;
                 }
                 flen = 0;
@@ -305,37 +302,39 @@ void format_buffs(char *buffs, int n_buffs, int buff_size) {
     }
 
     // test
-    for (int i = 0; i < 5; i++) {
-        printf("%d ", lengths[i]);
-    }
-    printf("\n");
+//    for (int i = 0; i < NUM_FIELDS; i++) {
+//        printf("%d ", lengths[i]);
+//    }
+//    printf("\n");
 
-    int ws_to_insert[n_buffs][5][2];
+    //int ws_to_insert[n_buffs][NUM_FIELDS][2];
 
     for (int i = 0; i < n_buffs; i++) {
-        char *buff = buffs + (i * buff_size) + (PERM_BITS_LEN + 1);
+        char *buff = buffs + (i * buff_size);
 
         int flen = 0;
         int fc = 0; // current field index
         int in_date = 0;
+        int insert_ws[NUM_FIELDS][2];
 
         for (int j = 0; j < strlen(buff) + 1; j++) {
             char c = buff[j];
 
-            if (c == '[' && fc == 3) {
+            if (c == '[' && fc == date_index) {
                 in_date = 1;
                 flen++;
-            } else if (c == ']' && fc == 3) {
+            } else if (c == ']' && fc == date_index) {
                 in_date = 0;
                 flen++;
             } else if ((c == ' ' || c == '\0') && in_date == 0) {
+                //printf("fc: %d\n", fc);
                 int lendiff = lengths[fc] - flen;
                 if (lendiff > 0) {
-                    ws_to_insert[i][fc][0] = lendiff;
-                    ws_to_insert[i][fc][1] = j;
+                    insert_ws[fc][0] = lendiff;
+                    insert_ws[fc][1] = j;
                 } else {
-                    ws_to_insert[i][fc][0] = 0;
-                    ws_to_insert[i][fc][1] = 0;
+                    insert_ws[fc][0] = 0;
+                    insert_ws[fc][1] = 0;
                 }
                 flen = 0;
                 fc++;
@@ -343,36 +342,33 @@ void format_buffs(char *buffs, int n_buffs, int buff_size) {
                 flen++;
             }
         }
-    }
 
+        int inserted = 0;
+        for (int k = 0; k < NUM_FIELDS; k++) {
+            int ws_n = insert_ws[k][0];
+            if (ws_n > 0) {
+                int ws_pos = insert_ws[k][1];
+                char ws[ws_n + 1];
+                memset(ws, ' ', ws_n);
+                ws[ws_n] = '\0';
 
-    for (int i = 0; i < n_buffs; i++){
-        for (int j = 0; j < 5; j++) {
-            int ws_n = ws_to_insert[i][j][0];
-            int ws_pos = ws_to_insert[i][j][1];
-            printf("%d, %d\n", ws_n, ws_pos);
+                //char *buff = buffs + (i * buff_size);
+                str_insert(buff, ws, ws_pos); 
+
+                inserted += ws_n;
+            }
         }
+
     }
-
-    for (int i = 0; i < 5; i++){
-        for (int j = 0; j < 5; j++) {
-            int ws_n = ws_to_insert[i][j][0];
-            int ws_pos = ws_to_insert[i][j][1];
-
-            char ws[ws_n + 1];
-            memset(ws, ' ', ws_n);
-
-            char *buff = buffs + (i * buff_size) + (PERM_BITS_LEN + 1);
-            str_insert(buff, ws, ws_pos); 
-        }
-    }
-
 }
 
 void str_insert(char *dest, char *src, int pos) {
-    // ['a', 'b', 'c', 'd']
-    // ['a', 'b', ' ', ' ', 'c', 'd']
-    // str_insert("abcd", "  ", 2);
+    /*
+     * ['a', 'b', 'c', 'd', '\0']
+     * ['a', 'b', ' ', ' ', 'c', 'd', '\0']
+     * str_insert("abcd", "  ", 2);
+    */
+    //printf("insert \"%s\" at %d into \"%s\"\n", src, pos, dest);
 
     int srclen = strlen(src);
     // 1. shift chars to the right
