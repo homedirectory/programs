@@ -1,0 +1,19 @@
+I want to be able to write notes into a file and keep it encrypted with a passphrase, so only the one who knows it can read them.
+
+encrypted-journal v1:
+CLI utility with 2 commands: encrypt, decrypt
+
+Expected outcome:
+- Encryption
+1. Write something into a text file.
+2. Call `jcrypt enc file.txt`
+3. New file file.txt.enc is created (the encrypted version)
+4. Prompt the user "Delete the original file?"
+- Decryption
+1. Call `jcrypt dec file.txt.enc`
+2. Prompt the user for a passphrase.
+3. New file file.txt is created (in case of an already existing file with the same path prompt the user for a new name or override the current file).
+
+
+
+
