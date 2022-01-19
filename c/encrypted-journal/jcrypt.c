@@ -13,6 +13,9 @@ int encrypt_file (char *in_fname, char *out_fname);
 int decrypt_file (char *in_fname, char *out_fname);
 int prompt_pass (char *pass_buff, int minlen, int maxlen);
 
+/* TODO
+ * generate random IV
+ */
 void main(int argc, char *argv[]) {
     /* 2 commands available
      * enc (usage: jcrypt enc IN_FILE [-o OUT_FILE])
@@ -53,10 +56,10 @@ void main(int argc, char *argv[]) {
 
 int encrypt_file (char *in_fname, char *out_fname) {
     // prompt for passphrase
-    char pass[MAX_PASS_LEN];
-    memset(pass, '\0', MAX_PASS_LEN);
+    char pass[MAX_PASS_LEN + 1];
+    memset(pass, '\0', MAX_PASS_LEN + 1);
 
-    prompt_pass(pass, MIN_PASS_LEN, MAX_PASS_LEN - 1);
+    prompt_pass(pass, MIN_PASS_LEN, MAX_PASS_LEN);
 
     // read file into plaintext;
     FILE *fp = fopen(in_fname, "r");
@@ -78,8 +81,12 @@ int encrypt_file (char *in_fname, char *out_fname) {
     unsigned char *iv = (unsigned char *)"0123456789012345";
     char ciphertext[MAX_BUFF];
 
-    int encrypted_len = encrypt((unsigned char*) plaintext, strlen(plaintext), pass, iv, (unsigned char*) ciphertext);
-    ciphertext[encrypted_len] = '\0';
+    int ciphertext_len;
+    if ((ciphertext_len = encrypt((unsigned char*) plaintext, strlen(plaintext), pass, iv, (unsigned char*) ciphertext)) == -1) {
+        printf("error while encrypting file: %s\n", in_fname);
+        exit(1);
+    }
+    ciphertext[ciphertext_len] = '\0';
 
     //printf("%s\n", ciphertext);
     fclose(fp);
@@ -111,13 +118,41 @@ int decrypt_file (char *in_fname, char *out_fname) {
     }
 
     fread(ciphertext, sizeof(char), MAX_BUFF - 1, fp);
+    fclose(fp);
     ciphertext[MAX_BUFF] = '\0';
 
+    // prompt for passphrase
+    char pass[MAX_PASS_LEN + 1];
+    memset(pass, '\0', MAX_PASS_LEN + 1);
+
+    prompt_pass(pass, MIN_PASS_LEN, MAX_PASS_LEN);
+
     char plaintext[MAX_BUFF];
+    unsigned char *iv = (unsigned char *)"0123456789012345";
+    int plaintext_len;
+
+    if ((plaintext_len = decrypt((unsigned char*) ciphertext, strlen(ciphertext), (unsigned char*) pass, iv, (unsigned char*) plaintext)) == -1) {
+        printf("error while decrypting file: %s\n", in_fname);
+        exit(1);
+    }
+    plaintext[plaintext_len] = '\0';
+
+    if (out_fname == NULL) {
+        out_fname = strcat(in_fname, ".dec");
+    }
+    fp = fopen(out_fname, "w");
+    if (fp == NULL) {
+        printf("error opening file: %s\n", out_fname);
+        exit(1);
+    }
+    fputs(plaintext, fp);
+    fclose(fp);
+
+    return 0;
 }
 
 int prompt_pass (char *pass_buff, int minlen, int maxlen) {
-    puts("Enter a passphrase: ");
+    puts("Passphrase: ");
     // TODO hide entered characters
 
     char temp_pass[MAX_BUFF];
