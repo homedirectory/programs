@@ -83,8 +83,11 @@ class BookmarkNode:
             self.__dict__[key] = node.__dict__[key]
 
     def to_json(self):
+        if not self.is_root_folder():
+            self.__dict__.pop("guid")
         self.__dict__.pop("parentNode")
         self.__dict__.pop("is_folder")
+
         children = self.__dict__.pop("children", [])
         children_json = []
         for child in children:
@@ -176,12 +179,12 @@ if __name__ == "__main__":
         print(USAGE)
         sys.exit(1)
 
-    with open(fname1, 'r') as f:
-        data1 = json.load(f)
-    with open(fname2, 'r') as f:
-        data2 = json.load(f)
+    with open(fname1, "rb") as f:
+        data1 = json.loads(f.read().decode('utf_8'))
+    with open(fname2, "rb") as f:
+        data2 = json.loads(f.read().decode('utf_8'))
 
     merged = merge_bookmarks(data1, data2)
 
     with open(fname_out, 'w') as f:
-        json.dump(merged, f)
+        json.dump(merged, f, ensure_ascii=False)
